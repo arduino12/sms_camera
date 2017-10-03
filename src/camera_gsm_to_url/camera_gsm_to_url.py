@@ -40,9 +40,10 @@ class CameraGsmToUrl(app.App):
         self.pictures_l = int((self.width - self.pictures_c * (self.pictures_w + self.sep) - self.sep) / 2) + self.sep + self.left
         self.pictures_t = self.sep + self.top
 
-        self._logger.debug('main_window: %s', (self.left, self.top, self.width, self.height))
-        self._logger.debug('first pictures: %s', (self.pictures_l, self.pictures_t, self.pictures_w, self.pictures_h))
-        self._logger.debug('pictures count: %s, sep: %s', self.pictures_c, self.sep)
+        self._logger.info('main window: %s', (self.left, self.top, self.width, self.height))
+        self._logger.info('camera resolution: %sx%s @ %s fps', self.camera.resolution.width, self.camera.resolution.height, self.camera.framerate)
+        self._logger.info('first picture window: %s', (self.pictures_l, self.pictures_t, self.pictures_w, self.pictures_h))
+        self._logger.info('pictures count: %s, sep: %s', self.pictures_c, self.sep)
         
         if not self.camera.closed:
             if not self.camera.previewing:
