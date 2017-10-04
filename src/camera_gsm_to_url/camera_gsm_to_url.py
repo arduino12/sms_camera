@@ -5,9 +5,13 @@ import datetime
 from PIL import Image
 from picamera import PiCamera
 from pyshorteners import Shortener
+import serial
+import serial.threaded
+import pygsheets
 
 from infra.app import app
 from infra.modules.gdrive import gdrive
+from infra.old_modules.m590 import m590
 from sms_camera.src.camera_gsm_to_url import constants
 
 
@@ -16,8 +20,14 @@ class CameraGsmToUrl(app.App):
 
     def __init__(self):
         app.App.__init__(self, constants)
+        # ignore sheets DEBUG and INFO spam
+        for i in ('googleapiclient.discovery', 'oauth2client.transport', 'oauth2client.crypt', 'oauth2client.client', 'PIL.PngImagePlugin'):
+            try:
+                logging.getLogger(i).setLevel(logging.WARNING)
+            except:
+                pass
         # google drive uploader
-        self.gdrive = gdrive.Gdrive(constants.SERVICE_ACCOUNT)
+        self.gdrive = gdrive.Gdrive(constants.SERVICE_ACCOUNT_PATH)
         # url shorter
         self.short_url = Shortener('Tinyurl').short
         # last pictures overlays
@@ -65,6 +75,57 @@ class CameraGsmToUrl(app.App):
         # draw pictures overlays
         self.draw_pictures()
 
+        try:
+            # open sheet using the SHEET_FILE_SERVICE key
+            self._drive_sheets = pygsheets.authorize(**constants.SHEET_SMS_LOG_ARGS)
+            self._sms_sheet = self._drive_sheets.open(constants.SHEET_SMS_LOG_NAME)
+            # open the worksheet within the sheet for sms logging
+            self._update_sms_workseet()
+        except:
+            self._logger.exception('sms_workseet')
+
+        try:
+            self._gsm_uart = serial.serial_for_url(**constants.GSM_UART)
+            self._gsm_reader = serial.threaded.ReaderThread(self._gsm_uart, m590.M590)
+            self._gsm_reader.start()
+            self.gsm = self._gsm_reader.connect()[1]
+        except:
+            self._logger.exception('gsm')
+        else:
+            self.gsm.status_changed = self.gsm_status_changed
+            self.gsm.sms_recived = self.gsm_sms_recived
+            
+    def gsm_status_changed(self):
+        self._logger.info('gsm_status_changed: %s', self.gsm.status)
+        if self.gsm.status == 'ALIVE':
+            if constants.GSM_SIM_NUMBER == '0':
+                constants.GSM_SIM_NUMBER = self.gsm.normalize_phone_number(self.gsm.get_sim_number())
+                self._logger.info('sim_number: %s', constants.GSM_SIM_NUMBER)
+                self._update_sms_workseet()
+        elif self.gsm.status == 'TIMEOUT':
+            self._logger.warning('gsm did not respond')
+
+    def gsm_sms_recived(self, number, send_time, text):
+        # normalize sms text, number and send_time
+        text = text.encode(errors='replace').decode().strip().replace('\n', ' ').replace('\t', ' ').replace('\r', '')
+        normalize_number = self.gsm.normalize_phone_number(number)
+        send_time = send_time.strftime(constants.DATETIME_FORMAT)
+        # log the sms to console and file
+        self._logger.info('AT: %s FROM: %s MESSAGES: %s', send_time, normalize_number, text)
+        # 
+        try:
+            self.set_effect(int(text))
+            path = self.take_picture()
+            url = self.upload_picture(path)
+            self.gsm.send_sms(number, 'התמונה שלך:\n%s' % (url,))
+        except:
+            pass
+        # log the sms to the workseet
+        try:
+            self.sms_workseet.append_table(values=(send_time, normalize_number, text))
+        except:
+            pass
+
     def draw_pictures(self):
         # draw pictures overlays
         for i, p in enumerate(self.pictures):
@@ -74,7 +135,7 @@ class CameraGsmToUrl(app.App):
         # capture picture and return its path
         self.camera.preview.alpha = 100
         time.sleep(0.7)
-        path = constants.IMAGES_PATH % (datetime.datetime.now().strftime(constants.IMAGES_DATETIME_FORMAT),)
+        path = constants.PICTURES_PATH % (datetime.datetime.now().strftime(constants.PICTURES_DATETIME_FORMAT),)
         self.camera.capture(path, resize=constants.CAMERA_RESIZE)
         self.camera.preview.alpha = 255
         self.add_picture(path)
@@ -93,10 +154,20 @@ class CameraGsmToUrl(app.App):
         self.camera.image_effect = constants.CAMERA_EFFECTS[index % len(constants.CAMERA_EFFECTS)]
 
     def upload_picture(self, path):
-        file_id = self.gdrive.upload_file(path, share=True, delete=True, parent_directory=constants.SMS_CAMERA_FOLDER)
-        url = self.short_url(self.gdrive.VIEW_FILE_URL % (file_id,))
-        return url
-        
+        file_id = self.gdrive.upload_file(path, share=True, delete=True, parent_directory=constants.DRIVE_SMS_CAMERA_FOLDER)
+        url = self.gdrive.VIEW_FILE_URL % (file_id,)
+        short_url = self.short_url(url)
+        self._logger.debug('upload_picture:\n%s\n%s', url, short_url)
+        return short_url
+
+    def _update_sms_workseet(self):
+        # open the worksheet with the matching gsm number
+        sms_workseet = self._sms_sheet.worksheet_by_title(constants.GSM_SIM_NUMBER)
+        if sms_workseet is None:
+            self._logger.warning('sms_workseet named %s didn\'t found', constants.GSM_SIM_NUMBER)
+            return
+        self.sms_workseet = sms_workseet
+
     def _image_to_overlay(self, image_path, layer=0, alpha=255, fullscreen=False, resize=None, transparent=True):
         # open image and resize it if needed
         img = Image.open(image_path)
@@ -112,6 +183,10 @@ class CameraGsmToUrl(app.App):
         return overlay
 
     def __exit__(self):
+        try:
+            self._gsm_reader.close()
+        except:
+            pass
         try:
             self.camera.close()
         except:
