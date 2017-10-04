@@ -18,3 +18,5 @@ IMAGES_DATETIME_FORMAT = DATETIME_FORMAT.replace('-', '_').replace(':', '_').rep
 LOGO0_PATH, LOGO1_PATH, LOGO2_PATH = [os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo%s.png' % (i,)) for i in range(3)]
 
 # LOGOR_LEVEL = logging.DEBUG
+SERVICE_ACCOUNT = os.path.join(BASIC_PATH, 'logger-995ad2d4b91d.json')
+SMS_CAMERA_FOLDER = '0B2AIf2iKCHvpYkxMM0NUNFE0bG8'

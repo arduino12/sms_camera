@@ -4,8 +4,10 @@ import logging
 import datetime
 from PIL import Image
 from picamera import PiCamera
+from pyshorteners import Shortener
 
 from infra.app import app
+from infra.modules.gdrive import gdrive
 from sms_camera.src.camera_gsm_to_url import constants
 
 
@@ -14,6 +16,10 @@ class CameraGsmToUrl(app.App):
 
     def __init__(self):
         app.App.__init__(self, constants)
+        # google drive uploader
+        self.gdrive = gdrive.Gdrive(constants.SERVICE_ACCOUNT)
+        # url shorter
+        self.short_url = Shortener('Tinyurl').short
         # last pictures overlays
         self.pictures = []
         # attach to raspberrypi camera
@@ -85,6 +91,11 @@ class CameraGsmToUrl(app.App):
     def set_effect(self, index):
         # set camera image effect by its index
         self.camera.image_effect = constants.CAMERA_EFFECTS[index % len(constants.CAMERA_EFFECTS)]
+
+    def upload_picture(self, path):
+        file_id = self.gdrive.upload_file(path, share=True, delete=True, parent_directory=constants.SMS_CAMERA_FOLDER)
+        url = self.short_url(self.gdrive.VIEW_FILE_URL % (file_id,))
+        return url
         
     def _image_to_overlay(self, image_path, layer=0, alpha=255, fullscreen=False, resize=None, transparent=True):
         # open image and resize it if needed
