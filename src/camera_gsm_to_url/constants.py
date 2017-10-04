@@ -5,7 +5,7 @@ from infra.core.ansi import Ansi
 from infra.run.common import *
 
 
-LOGOR_LEVEL = logging.DEBUG
+# LOGOR_LEVEL = logging.DEBUG
 
 GSM_UART = {'url': 'loop://' if IS_WINDOWS else '/dev/ttyGsmUart', 'baudrate': 57600, 'timeout': 1}
 GSM_SIM_NUMBER = '0'

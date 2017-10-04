@@ -114,7 +114,7 @@ class CameraGsmToUrl(app.App):
         self._logger.info('AT: %s FROM: %s MESSAGES: %s', send_time, normalize_number, text)
         # 
         try:
-            self.set_effect(int(text))
+            # self.set_effect(int(text))
             path = self.take_picture()
             url = self.upload_picture(path)
             self.gsm.send_sms(number, 'התמונה שלך:\n%s' % (url,))
@@ -136,6 +136,7 @@ class CameraGsmToUrl(app.App):
         self.camera.preview.alpha = 100
         time.sleep(0.7)
         path = constants.PICTURES_PATH % (datetime.datetime.now().strftime(constants.PICTURES_DATETIME_FORMAT),)
+        self._logger.info('take_picture: %s', path)
         self.camera.capture(path, resize=constants.CAMERA_RESIZE)
         self.camera.preview.alpha = 255
         self.add_picture(path)
@@ -151,14 +152,15 @@ class CameraGsmToUrl(app.App):
 
     def set_effect(self, index):
         # set camera image effect by its index
+        self._logger.info('set_effect: %s', index)
         self.camera.image_effect = constants.CAMERA_EFFECTS[index % len(constants.CAMERA_EFFECTS)]
 
     def upload_picture(self, path):
+        self._logger.info('upload_picture: %s', path)
         file_id = self.gdrive.upload_file(path, share=True, delete=True, parent_directory=constants.DRIVE_SMS_CAMERA_FOLDER)
-        url = self.gdrive.VIEW_FILE_URL % (file_id,)
-        short_url = self.short_url(url)
-        self._logger.debug('upload_picture:\n%s\n%s', url, short_url)
-        return short_url
+        url = self.short_url(self.gdrive.VIEW_FILE_URL % (file_id,))
+        self._logger.debug('upload_picture url: %s', url)
+        return url
 
     def _update_sms_workseet(self):
         # open the worksheet with the matching gsm number
