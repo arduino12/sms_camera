@@ -7,29 +7,41 @@ from picamera import PiCamera
 from pyshorteners import Shortener
 import serial
 import serial.threaded
-import pygsheets
+
 
 from infra.app import app
-from infra.modules.gdrive import gdrive
 from infra.old_modules.m590 import m590
+from infra.modules.google.drive import drive
+from infra.modules.google.sheets import sheets
 from sms_camera.src.camera_gsm_to_url import constants
 
 
 class CameraGsmToUrl(app.App):
     _logger = logging.getLogger('camera_gsm_to_url')
 
+
     def __init__(self):
-        app.App.__init__(self, constants)
-        # ignore sheets DEBUG and INFO spam
-        for i in ('googleapiclient.discovery', 'oauth2client.transport', 'oauth2client.crypt', 'oauth2client.client', 'PIL.PngImagePlugin'):
-            try:
-                logging.getLogger(i).setLevel(logging.WARNING)
-            except:
-                pass
+        app.App.__init__(self, constants, spam_loggers=sheets.Sheets.SPAM_LOGGERS +
+            ('PIL.PngImagePlugin', 'urllib3.connectionpool'))
+        self._modules.extend((m590, drive, sheets))
         # google drive uploader
-        self.gdrive = gdrive.Gdrive(constants.SERVICE_ACCOUNT_PATH)
+        try:
+            self.drive = drive.Drive(constants.SERVICE_ACCOUNT_PATH)
+        except:
+            self._logger.exception('self.drive')
+            self.drive = None
+        # google sheets logger
+        try:
+            self.sheets = sheets.Sheets(constants.SERVICE_ACCOUNT_PATH)
+        except:
+            self._logger.exception('self.sheet')
+            self.sheet = None
         # url shorter
-        self.short_url = Shortener('Tinyurl').short
+        try:
+            self.short_url = Shortener(**constants.SHORT_URL_ARGS).short
+        except:
+            self._logger.exception('self.short_url')
+            self.short_url = None
         # last pictures overlays
         self.pictures = []
         # attach to raspberrypi camera
@@ -56,9 +68,10 @@ class CameraGsmToUrl(app.App):
         camera_h = self.height - camera_t - self.sep
         camera_w = int(camera_scale * camera_h)
         camera_l = int((self.width - camera_w) / 2) + self.left
-        self._logger.info('\nmain window: %s sep: %s\ncamera resolution: %sx%s @ %s fps\nfirst picture window: %s count: %s', 
+        self._logger.info('\nmain window: %s sep: %s\ncamera resolution: %sx%s @ %s fps', 
             (self.left, self.top, self.width, self.height), self.sep,
-            self.camera.resolution.width, self.camera.resolution.height, self.camera.framerate,
+            self.camera.resolution.width, self.camera.resolution.height, self.camera.framerate)
+        self._logger.debug('\nfirst picture window: %s count: %s', 
             (self.pictures_l, self.pictures_t, self.pictures_w, self.pictures_h), self.pictures_c)
         # draw camera preview
         self.camera.start_preview()
@@ -74,16 +87,7 @@ class CameraGsmToUrl(app.App):
         self.logo3.window = [camera_l, camera_t + camera_h - self.logo3.height, self.logo3.width, self.logo3.height]
         # draw pictures overlays
         self.draw_pictures()
-
-        try:
-            # open sheet using the SHEET_FILE_SERVICE key
-            self._drive_sheets = pygsheets.authorize(**constants.SHEET_SMS_LOG_ARGS)
-            self._sms_sheet = self._drive_sheets.open(constants.SHEET_SMS_LOG_NAME)
-            # open the worksheet within the sheet for sms logging
-            self._update_sms_workseet()
-        except:
-            self._logger.exception('sms_workseet')
-
+        # gsm module
         try:
             self._gsm_uart = serial.serial_for_url(**constants.GSM_UART)
             self._gsm_reader = serial.threaded.ReaderThread(self._gsm_uart, m590.M590)
@@ -91,17 +95,17 @@ class CameraGsmToUrl(app.App):
             self.gsm = self._gsm_reader.connect()[1]
         except:
             self._logger.exception('gsm')
+            self.gsm = None
         else:
             self.gsm.status_changed = self.gsm_status_changed
             self.gsm.sms_recived = self.gsm_sms_recived
-            
+
     def gsm_status_changed(self):
         self._logger.info('gsm_status_changed: %s', self.gsm.status)
         if self.gsm.status == 'ALIVE':
-            if constants.GSM_SIM_NUMBER == '0':
-                constants.GSM_SIM_NUMBER = self.gsm.normalize_phone_number(self.gsm.get_sim_number())
-                self._logger.info('sim_number: %s', constants.GSM_SIM_NUMBER)
-                self._update_sms_workseet()
+            if constants.WORKSHEET_SMS_NAME == '0':
+                constants.WORKSHEET_SMS_NAME = self.gsm.normalize_phone_number(self.gsm.get_sim_number())
+                self._logger.info('sim_number: %s', constants.WORKSHEET_SMS_NAME)
         elif self.gsm.status == 'TIMEOUT':
             self._logger.warning('gsm did not respond')
 
@@ -110,21 +114,33 @@ class CameraGsmToUrl(app.App):
         text = text.encode(errors='replace').decode().strip().replace('\n', ' ').replace('\t', ' ').replace('\r', '')
         normalize_number = self.gsm.normalize_phone_number(number)
         send_time = send_time.strftime(constants.DATETIME_FORMAT)
-        # log the sms to console and file
         self._logger.info('AT: %s FROM: %s MESSAGES: %s', send_time, normalize_number, text)
-        # 
+        url = self.capture_and_share(number)
+        # log to worksheet
+        if self.sheets is not None:
+            try:
+                self.sheets.append_worksheet_table(constants.SHEET_SMS_LOG_NAME, constants.WORKSHEET_SMS_NAME,
+                    send_time, normalize_number, text, url)
+            except:
+                self._logger.exception('self.sheets')
+                self.sheets = None
+
+    def capture_and_share(self, number):
         try:
-            # self.set_effect(int(text))
             path = self.take_picture()
-            url = self.upload_picture(path)
-            self.gsm.send_sms(number, 'התמונה שלך:\n%s' % (url,))
         except:
-            pass
-        # log the sms to the workseet
+            self._logger.error('capture_and_share: take_picture failed')
+            return ''
         try:
-            self.sms_workseet.append_table(values=(send_time, normalize_number, text))
+            url = self.upload_picture(path)
         except:
-            pass
+            self._logger.exception('capture_and_share: upload_picture failed')
+            return ''
+        try:
+            self.gsm.send_sms(number, constants.GSM_SEND_SMS_FORMAT % (url,))
+        except:
+            self._logger.error('capture_and_share: send_sms failed')
+        return url
 
     def draw_pictures(self):
         # draw pictures overlays
@@ -156,19 +172,16 @@ class CameraGsmToUrl(app.App):
         self.camera.image_effect = constants.CAMERA_EFFECTS[index % len(constants.CAMERA_EFFECTS)]
 
     def upload_picture(self, path):
+        if self.drive is None:
+            raise IOError('can\t upload: self.drive is None')
         self._logger.info('upload_picture: %s', path)
-        file_id = self.gdrive.upload_file(path, share=True, delete=True, parent_directory=constants.DRIVE_SMS_CAMERA_FOLDER)
-        url = self.short_url(self.gdrive.VIEW_FILE_URL % (file_id,))
+        file_id = self.drive.upload_file(path, share=True, delete=True,
+            parent_directory=constants.DRIVE_SMS_CAMERA_FOLDER, timeout=constants.DRIVE_UPLOAD_TIMEOUT)
+        url = self.drive.VIEW_FILE_URL % (file_id,)
+        if self.short_url is not None:
+            url = self.short_url(self.drive.VIEW_FILE_URL % (file_id,))
         self._logger.debug('upload_picture url: %s', url)
         return url
-
-    def _update_sms_workseet(self):
-        # open the worksheet with the matching gsm number
-        sms_workseet = self._sms_sheet.worksheet_by_title(constants.GSM_SIM_NUMBER)
-        if sms_workseet is None:
-            self._logger.warning('sms_workseet named %s didn\'t found', constants.GSM_SIM_NUMBER)
-            return
-        self.sms_workseet = sms_workseet
 
     def _image_to_overlay(self, image_path, layer=0, alpha=255, fullscreen=False, resize=None, transparent=True):
         # open image and resize it if needed
