@@ -79,12 +79,14 @@ class CameraGsmToUrl(app.App):
         camera_topper_layer = self.camera.preview.layer + 1
         self.camera.preview.window = [camera_l, camera_t, camera_w, camera_h]
         # draw logos overlays
-        self.logo1 = self._image_to_overlay(constants.LOGO0_PATH, layer=camera_topper_layer)
-        self.logo2 = self._image_to_overlay(constants.LOGO1_PATH, layer=camera_topper_layer)
-        self.logo3 = self._image_to_overlay(constants.LOGO2_PATH, layer=camera_topper_layer)
-        self.logo1.window = [camera_l, camera_t, self.logo1.width, self.logo1.height]
-        self.logo2.window = [camera_l + camera_w - self.logo2.width, camera_t, self.logo2.width, self.logo2.height]
-        self.logo3.window = [camera_l, camera_t + camera_h - self.logo3.height, self.logo3.width, self.logo3.height]
+        # self.logo1 = self._image_to_overlay(constants.LOGO0_PATH, layer=camera_topper_layer)
+        # self.logo2 = self._image_to_overlay(constants.LOGO1_PATH, layer=camera_topper_layer)
+        # self.logo3 = self._image_to_overlay(constants.LOGO2_PATH, layer=camera_topper_layer)
+        self.logo4 = self._image_to_overlay(constants.LOGO3_PATH, layer=camera_topper_layer)
+        self.logo4.window = [camera_l + int((camera_w - self.logo4.width) / 2), camera_t + camera_h - self.logo4.height, self.logo4.width, self.logo4.height]
+        # self.logo1.window = [camera_l, camera_t, self.logo1.width, self.logo1.height]
+        # self.logo2.window = [camera_l + camera_w - self.logo2.width, camera_t, self.logo2.width, self.logo2.height]
+        # self.logo3.window = [camera_l, camera_t + camera_h - self.logo3.height, self.logo3.width, self.logo3.height]
         # draw pictures overlays
         self.draw_pictures()
         # gsm module
@@ -155,6 +157,15 @@ class CameraGsmToUrl(app.App):
         self._logger.info('take_picture: %s', path)
         self.camera.capture(path, resize=constants.CAMERA_RESIZE)
         self.camera.preview.alpha = 255
+        
+        img = Image.open(path, 'r').convert('RGBA')
+        draw = Image.open(constants.LOGO3_PATH, 'r').convert('RGBA')
+        img_w, img_h = img.size
+        draw_w, draw_h = draw.size
+        img.paste(draw, (int((img_w - draw_w) / 2), img_h - draw_h), draw)
+        img = img.convert('RGB')
+        img.save(path)
+
         self.add_picture(path)
         return path
 

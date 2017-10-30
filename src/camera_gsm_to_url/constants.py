@@ -5,9 +5,9 @@ from infra.core.ansi import Ansi
 from infra.run.common import *
 
 
-LOGOR_LEVEL = logging.DEBUG
+# LOGOR_LEVEL = logging.DEBUG
 
-GSM_UART = {'url': 'loop://' if IS_WINDOWS else '/dev/ttyGsmUart', 'baudrate': 38400, 'timeout': 1}
+GSM_UART = {'url': 'loop://' if IS_WINDOWS else '/dev/ttyGsmUart', 'baudrate': 57600, 'timeout': 1}
 
 CAMERA_EFFECTS = ['none', 'negative', 'solarize', 'sketch', 'emboss', 'hatch', 'watercolor', 'colorswap', 'posterise', 'cartoon']
 # CAMERA_FPS = 30
@@ -20,7 +20,8 @@ PICTURES_HEIGHT_SCALE = 0.2
 PICTURES_PATH = '/tmp/%s.jpg'
 PICTURES_DATETIME_FORMAT = DATETIME_FORMAT.replace('-', '_').replace(':', '_').replace(' ', '_')
 
-LOGO0_PATH, LOGO1_PATH, LOGO2_PATH = [os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo%s.png' % (i,)) for i in range(3)]
+# LOGO0_PATH, LOGO1_PATH, LOGO2_PATH = [os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo%s.png' % (i,)) for i in range(3)]
+LOGO3_PATH = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo3.png')
 
 GSM_SEND_SMS_FORMAT = 'התמונה שלך:\n%s'
 
