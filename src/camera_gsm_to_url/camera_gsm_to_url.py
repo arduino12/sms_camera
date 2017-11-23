@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import datetime
+import platform
 from PIL import Image
 from picamera import PiCamera
 from pyshorteners import Shortener
@@ -10,7 +11,7 @@ import serial.threaded
 
 
 from infra.app import app
-from infra.old_modules.m590 import m590
+from infra.old_modules.sim800 import sim800
 from infra.modules.google.drive import drive
 from infra.modules.google.sheets import sheets
 from sms_camera.src.camera_gsm_to_url import constants
@@ -23,7 +24,7 @@ class CameraGsmToUrl(app.App):
     def __init__(self):
         app.App.__init__(self, constants, spam_loggers=sheets.Sheets.SPAM_LOGGERS +
             ('PIL.PngImagePlugin', 'urllib3.connectionpool'))
-        self._modules.extend((m590, drive, sheets))
+        self._modules.extend((sim800, drive, sheets))
         # google drive uploader
         try:
             self.drive = drive.Drive(constants.SERVICE_ACCOUNT_PATH)
@@ -42,6 +43,8 @@ class CameraGsmToUrl(app.App):
         except:
             self._logger.exception('self.short_url')
             self.short_url = None
+        # google sheets name is the hostname
+        constants.WORKSHEET_SMS_NAME = platform.node()
         # last pictures overlays
         self.pictures = []
         # attach to raspberrypi camera
@@ -92,7 +95,7 @@ class CameraGsmToUrl(app.App):
         # gsm module
         try:
             self._gsm_uart = serial.serial_for_url(**constants.GSM_UART)
-            self._gsm_reader = serial.threaded.ReaderThread(self._gsm_uart, m590.M590)
+            self._gsm_reader = serial.threaded.ReaderThread(self._gsm_uart, sim800.Sim800)
             self._gsm_reader.start()
             self.gsm = self._gsm_reader.connect()[1]
         except:
@@ -105,9 +108,8 @@ class CameraGsmToUrl(app.App):
     def gsm_status_changed(self):
         self._logger.info('gsm_status_changed: %s', self.gsm.status)
         if self.gsm.status == 'ALIVE':
-            if constants.WORKSHEET_SMS_NAME == '0':
-                constants.WORKSHEET_SMS_NAME = self.gsm.normalize_phone_number(self.gsm.get_sim_number())
-                self._logger.info('sim_number: %s', constants.WORKSHEET_SMS_NAME)
+            self._logger.info(constants.GSM_DATA_FORMAT,
+                self.gsm.get_csq(), self.gsm.get_vbat(), self.gsm.get_temperature())
         elif self.gsm.status == 'TIMEOUT':
             self._logger.warning('gsm did not respond')
 
@@ -117,15 +119,29 @@ class CameraGsmToUrl(app.App):
         normalize_number = self.gsm.normalize_phone_number(number)
         send_time = send_time.strftime(constants.DATETIME_FORMAT)
         self._logger.info('AT: %s FROM: %s MESSAGES: %s', send_time, normalize_number, text)
-        url = self.capture_and_share(number)
-        # log to worksheet
-        if self.sheets is not None:
+        if text == 'REBOOT':
+            # self._logger.info(constants.REBOOT_FORMAT)
+            self.send_sms(number, constants.REBOOT_FORMAT, False)
+            os.system('shutdown -r')
+        elif text == 'GSM DATA':
             try:
-                self.sheets.append_worksheet_table(constants.SHEET_SMS_LOG_NAME, constants.WORKSHEET_SMS_NAME,
-                    send_time, normalize_number, text, url)
+                t = constants.GSM_DATA_FORMAT % (
+                    self.gsm.get_csq(), self.gsm.get_vbat(), self.gsm.get_temperature())
             except:
-                self._logger.exception('self.sheets')
-                self.sheets = None
+                self._logger.warning('cant read gsm data')
+                return
+            # self._logger.info(t)
+            self.send_sms(number, t.replace(', ', '\n'), False)
+        else:
+            url = self.capture_and_share(number)
+            # log to worksheet
+            if self.sheets is not None:
+                try:
+                    self.sheets.append_worksheet_table(constants.SHEET_SMS_LOG_NAME, constants.WORKSHEET_SMS_NAME,
+                        send_time, normalize_number, text, url)
+                except:
+                    self._logger.exception('self.sheets')
+                    self.sheets = None
 
     def capture_and_share(self, number):
         try:
@@ -139,7 +155,7 @@ class CameraGsmToUrl(app.App):
             self._logger.exception('capture_and_share: upload_picture failed')
             return ''
         try:
-            self.gsm.send_sms(number, constants.GSM_SEND_SMS_FORMAT % (url,))
+            self.send_sms(number, constants.GSM_SEND_SMS_FORMAT % (url,))
         except:
             self._logger.error('capture_and_share: send_sms failed')
         return url
@@ -207,6 +223,13 @@ class CameraGsmToUrl(app.App):
         overlay = self.camera.add_overlay(pad.tobytes(), img.size, layer=layer, alpha=alpha, fullscreen=fullscreen)
         overlay.width, overlay.height = img.size
         return overlay
+
+    def send_sms(self, number, text, raise_exception=True):
+        try:
+            self.gsm.send_sms(number, text)
+        except:
+            if raise_exception:
+                raise
 
     def __exit__(self):
         try:

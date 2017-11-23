@@ -7,7 +7,7 @@ from infra.run.common import *
 
 # LOGOR_LEVEL = logging.DEBUG
 
-GSM_UART = {'url': 'loop://' if IS_WINDOWS else '/dev/ttyGsmUart', 'baudrate': 57600, 'timeout': 1}
+GSM_UART = {'url': 'loop://' if IS_WINDOWS else '/dev/ttyGsmUart', 'baudrate': 115200, 'timeout': 1}
 
 CAMERA_EFFECTS = ['none', 'negative', 'solarize', 'sketch', 'emboss', 'hatch', 'watercolor', 'colorswap', 'posterise', 'cartoon']
 # CAMERA_FPS = 30
@@ -24,6 +24,8 @@ PICTURES_DATETIME_FORMAT = DATETIME_FORMAT.replace('-', '_').replace(':', '_').r
 LOGO3_PATH = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo3.png')
 
 GSM_SEND_SMS_FORMAT = 'התמונה שלך:\n%s'
+REBOOT_FORMAT = 'system will reboot in a minute'
+GSM_DATA_FORMAT = 'csq: %s, vbat: %s, temperature: %s'
 
 KEYS_PATH = os.path.join(BASIC_PATH, 'keys')
 # SHORT_URL_ARGS = {'engine': 'Google', 'api_key': open(os.path.join(KEYS_PATH, 'google_api_key.txt'), 'r').read(), 'timeout': 1} # {'engine': 'Tinyurl', 'timeout': 1}
