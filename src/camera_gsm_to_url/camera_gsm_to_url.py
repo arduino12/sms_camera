@@ -3,7 +3,7 @@ import time
 import logging
 import datetime
 import platform
-from PIL import Image
+from PIL import Image, ImageDraw
 from picamera import PiCamera
 from pyshorteners import Shortener
 import serial
@@ -36,7 +36,7 @@ class CameraGsmToUrl(app.App):
             self.sheets = sheets.Sheets(constants.SERVICE_ACCOUNT_PATH)
         except:
             self._logger.exception('self.sheet')
-            self.sheet = None
+            self.sheets = None
         # url shorter
         try:
             self.short_url = Shortener(**constants.SHORT_URL_ARGS).short
@@ -54,44 +54,20 @@ class CameraGsmToUrl(app.App):
             self.camera.framerate = constants.CAMERA_FPS
         if hasattr(constants, 'CAMERA_RESOLUTION'):
             self.camera.resolution = constants.CAMERA_RESOLUTION
-        if not hasattr(constants, 'CAMERA_RESIZE'):
-            constants.CAMERA_RESIZE = None
-        # get current screen size
-        self.left, self.top = 0, 0
-        self.width, self.height = map(int, os.popen(r'tvservice -s | grep -oP "\d\d+x\d\d+"', 'r').read().strip().split('x'))
-        # calc draw stuff
-        camera_scale = self.camera.resolution.width / self.camera.resolution.height
-        self.sep = int(min(self.width, self.height) * constants.SEP_SCALE)
-        self.pictures_h = int((self.height - 3 * self.sep) * constants.PICTURES_HEIGHT_SCALE)
-        self.pictures_w = int(camera_scale * self.pictures_h)
-        self.pictures_c = int((self.width - self.sep) / (self.pictures_w + self.sep))
-        self.pictures_l = int((self.width - self.pictures_c * (self.pictures_w + self.sep) - self.sep) / 2) + self.sep + self.left
-        self.pictures_t = self.sep + self.top
-        camera_t = self.sep + self.pictures_h + self.sep 
-        camera_h = self.height - camera_t - self.sep
-        camera_w = int(camera_scale * camera_h)
-        camera_l = int((self.width - camera_w) / 2) + self.left
+        if not hasattr(constants, 'CAMERA_CROP'):
+            constants.CAMERA_CROP = (0, 0, 0, 0)
+        if not hasattr(constants, 'SCREEN_RESOLUTION'):
+            constants.SCREEN_RESOLUTION = tuple(map(int, os.popen(r'tvservice -s | grep -oP "\d\d+x\d\d+"', 'r').read().strip().split('x')))
+        # calc draw stuff and draw preview
+        self.calc_and_draw_preview()
+        # draw pictures overlays
+        self.draw_pictures()
+        # log display parameters
         self._logger.info('\nmain window: %s sep: %s\ncamera resolution: %sx%s @ %s fps', 
             (self.left, self.top, self.width, self.height), self.sep,
             self.camera.resolution.width, self.camera.resolution.height, self.camera.framerate)
         self._logger.debug('\nfirst picture window: %s count: %s', 
             (self.pictures_l, self.pictures_t, self.pictures_w, self.pictures_h), self.pictures_c)
-        # draw camera preview
-        self.camera.start_preview()
-        self.camera.preview.fullscreen = False
-        camera_topper_layer = self.camera.preview.layer + 1
-        self.camera.preview.window = [camera_l, camera_t, camera_w, camera_h]
-        # draw logos overlays
-        # self.logo1 = self._image_to_overlay(constants.LOGO0_PATH, layer=camera_topper_layer)
-        # self.logo2 = self._image_to_overlay(constants.LOGO1_PATH, layer=camera_topper_layer)
-        # self.logo3 = self._image_to_overlay(constants.LOGO2_PATH, layer=camera_topper_layer)
-        # self.logo4 = self._image_to_overlay(constants.LOGO3_PATH, layer=camera_topper_layer)
-        # self.logo4.window = [camera_l + int((camera_w - self.logo4.width) / 2), camera_t + camera_h - self.logo4.height, self.logo4.width, self.logo4.height]
-        # self.logo1.window = [camera_l, camera_t, self.logo1.width, self.logo1.height]
-        # self.logo2.window = [camera_l + camera_w - self.logo2.width, camera_t, self.logo2.width, self.logo2.height]
-        # self.logo3.window = [camera_l, camera_t + camera_h - self.logo3.height, self.logo3.width, self.logo3.height]
-        # draw pictures overlays
-        self.draw_pictures()
         # gsm module
         try:
             self._gsm_uart = serial.serial_for_url(**constants.GSM_UART)
@@ -160,6 +136,53 @@ class CameraGsmToUrl(app.App):
             self._logger.error('capture_and_share: send_sms failed')
         return url
 
+    def calc_and_draw_preview(self):
+        self.left, self.top = 0, 0
+        self.width, self.height = constants.SCREEN_RESOLUTION
+        crop_l, crop_t, crop_r, crop_b = constants.CAMERA_CROP
+        camera_w, camera_h = self.camera.resolution.width, self.camera.resolution.height
+        croped_camera_w, croped_camera_h = camera_w - crop_l - crop_r, camera_h - crop_t - crop_b
+        view_scale, camera_scale = croped_camera_w / croped_camera_h, camera_w / camera_h
+        self.sep = int(min(self.width, self.height) * constants.SEP_SCALE)
+        # calc pictures count, size and positions
+        self.pictures_h = int((self.height - 3 * self.sep) * constants.PICTURES_HEIGHT_SCALE)
+        self.pictures_w = int(view_scale * self.pictures_h)
+        self.pictures_c = int((self.width - self.sep) / (self.pictures_w + self.sep))
+        self.pictures_l = int((self.width - self.pictures_c * (self.pictures_w + self.sep) - self.sep) / 2) + self.sep + self.left
+        self.pictures_t = self.sep + self.top
+        # calc final view size and position
+        view_t = self.sep + self.pictures_h + self.sep
+        view_h = self.height - view_t - self.sep
+        view_w = int(view_scale * view_h)
+        max_view_w = self.width - self.sep * 2
+        if view_w > max_view_w:
+            view_w = max_view_w
+            view_h = int(1 / view_scale * view_w)
+        view_l = int((self.width - view_w) / 2) + self.left
+        # calc camera preview size and position
+        preview_scale = lambda x: int(x * view_w / camera_w)
+        offset_l = preview_scale(crop_l)
+        offset_t = preview_scale(crop_t)
+        offset_r = preview_scale(crop_r)
+        offset_b = preview_scale(crop_b)
+        preview_l = view_l - offset_l
+        preview_t = view_t - offset_t
+        preview_w = view_w + preview_scale(crop_l + crop_r)
+        # preview_h = view_h + preview_scale(crop_t + crop_b)
+        # preview_w = view_w + offset_l + offset_r
+        # preview_h = view_h + offset_t + offset_b
+        preview_h = int(1 / camera_scale * preview_w)
+        # draw camera preview
+        self.camera.start_preview()
+        self.camera.preview.fullscreen = False
+        self.camera.preview.window = [preview_l, preview_t, preview_w, preview_h]
+        # draw preview crop mask (black rectangle with transparent rectangle inside)
+        img = Image.new('RGBA', (preview_w, preview_h), (0, 0, 0, 255))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle((offset_l, offset_t, preview_w - offset_r, preview_h - offset_b), (0, 0, 0, 0))
+        self.preview_crop = self._image_to_overlay(img, layer=self.camera.preview.layer + 1)
+        self.preview_crop.window = self.camera.preview.window
+
     def draw_pictures(self):
         # draw pictures overlays
         for i, p in enumerate(self.pictures):
@@ -171,15 +194,23 @@ class CameraGsmToUrl(app.App):
         time.sleep(0.7)
         path = constants.PICTURES_PATH % (datetime.datetime.now().strftime(constants.PICTURES_DATETIME_FORMAT),)
         self._logger.info('take_picture: %s', path)
-        self.camera.capture(path, resize=constants.CAMERA_RESIZE)
+        self.camera.capture(path)
         self.camera.preview.alpha = 255
+        # crop sides and re-save image
+        img = Image.open(path, 'r')
+        l, t, r, b = constants.CAMERA_CROP
+        img = img.crop((l, t, img.width - r, img.height - b))
+        img.save(path)
         self.add_picture(path)
-        
-        img = Image.open(path, 'r').convert('RGBA')
+        # add frame and re-save image
         draw = Image.open(constants.LOGO3_PATH, 'r').convert('RGBA')
         img_w, img_h = img.size
         draw_w, draw_h = draw.size
         img.paste(draw, (int((img_w - draw_w) / 2), img_h - draw_h), draw)
+        frame = Image.open(constants.FRAME1_PATH, 'r').convert('RGBA')
+        img = img.resize((536, 452))
+        frame.paste(img, (105, 105))
+        img = frame
         img = img.convert('RGB')
         img.save(path)
 
@@ -187,7 +218,8 @@ class CameraGsmToUrl(app.App):
 
     def add_picture(self, path):
         # add the given picture to pictures list
-        self.pictures.append(self._image_to_overlay(path, resize=(self.pictures_w, self.pictures_h), transparent=False))
+        self.pictures.append(self._image_path_to_overlay(
+            path, resize=(self.pictures_w, self.pictures_h), transparent=False, layer=self.preview_crop.layer + 1))
         if len(self.pictures) > self.pictures_c:
             self.pictures[0].close()
             self.pictures.pop(0)
@@ -210,11 +242,15 @@ class CameraGsmToUrl(app.App):
         self._logger.debug('upload_picture url: %s', url)
         return url
 
-    def _image_to_overlay(self, image_path, layer=0, alpha=255, fullscreen=False, resize=None, transparent=True):
+    def _image_path_to_overlay(self, image_path, resize=None, *args, **kwargs):
         # open image and resize it if needed
         img = Image.open(image_path)
         if resize is not None:
             img = img.resize(resize)
+
+        return self._image_to_overlay(img, *args, **kwargs)
+
+    def _image_to_overlay(self, img, layer=0, alpha=255, fullscreen=False, transparent=True):
         # create required size (32, 16) padding for the image 
         pad = Image.new('RGBA' if transparent else 'RGB', [((n + m - 1) // m) * m for n, m in zip(img.size, (32, 16))])
         # paste the original image into the padding
@@ -230,6 +266,10 @@ class CameraGsmToUrl(app.App):
         except:
             if raise_exception:
                 raise
+
+    def smart_reload(self, reason=None):
+        self.reload()
+        return
 
     def __exit__(self):
         try:

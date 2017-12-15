@@ -11,12 +11,17 @@ GSM_UART = {'url': 'loop://' if IS_WINDOWS else '/dev/ttyGsmUart', 'baudrate': 1
 
 CAMERA_EFFECTS = ['none', 'negative', 'solarize', 'sketch', 'emboss', 'hatch', 'watercolor', 'colorswap', 'posterise', 'cartoon']
 # CAMERA_FPS = 30
-# CAMERA_RESIZE = (480, 360)
 # CAMERA_RESOLUTION = (1680, 1050)
 # CAMERA_RESOLUTION = (1640, 922)
 # CAMERA_RESOLUTION = (1440, 1080)
 CAMERA_RESOLUTION = (1640, 1232)
+# CAMERA_RESOLUTION = (1327, 996)
 # CAMERA_RESOLUTION = (3280, 2464)
+# CAMERA_CROP = (100, 0, 1328, 996)
+CAMERA_CROP = (100, 100, 100, 100)
+# CAMERA_CROP = (100, 200, 100, 200)
+# SCREEN_RESOLUTION = (1680, 1050)
+# SCREEN_RESOLUTION = (1280, 720)
 
 SEP_SCALE = 0.005
 
@@ -24,7 +29,7 @@ PICTURES_HEIGHT_SCALE = 0.15
 PICTURES_PATH = '/tmp/%s.jpg'
 PICTURES_DATETIME_FORMAT = DATETIME_FORMAT.replace('-', '_').replace(':', '_').replace(' ', '_')
 
-# LOGO0_PATH, LOGO1_PATH, LOGO2_PATH = [os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo%s.png' % (i,)) for i in range(3)]
+FRAME1_PATH, FRAME1_WINDOW = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'frame1.png'), (105, 105, 536, 452)
 LOGO3_PATH = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo3.png')
 
 GSM_SEND_SMS_FORMAT = 'התמונה שלך:\n%s'
