@@ -29,7 +29,8 @@ PICTURES_HEIGHT_SCALE = 0.15
 PICTURES_PATH = '/tmp/%s.jpg'
 PICTURES_DATETIME_FORMAT = DATETIME_FORMAT.replace('-', '_').replace(':', '_').replace(' ', '_')
 
-FRAME1_PATH, FRAME1_WINDOW = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'frame1.png'), (105, 105, 536, 452)
+# FRAME_PATH, FRAME_POS, FRAME_SIZE = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'frame1.png'), (105, 105), (536, 452)
+FRAME_PATH, FRAME_POS, FRAME_SIZE = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'frame2.png'), (215, 223), (1200, 980)
 LOGO3_PATH = os.path.join(BASIC_PATH, 'sms_camera', 'res', 'logo3.png')
 
 GSM_SEND_SMS_FORMAT = 'התמונה שלך:\n%s'

@@ -207,9 +207,9 @@ class CameraGsmToUrl(app.App):
         img_w, img_h = img.size
         draw_w, draw_h = draw.size
         img.paste(draw, (int((img_w - draw_w) / 2), img_h - draw_h), draw)
-        frame = Image.open(constants.FRAME1_PATH, 'r').convert('RGBA')
-        img = img.resize((536, 452))
-        frame.paste(img, (105, 105))
+        frame = Image.open(constants.FRAME_PATH, 'r').convert('RGBA')
+        img = img.resize(constants.FRAME_SIZE)
+        frame.paste(img, constants.FRAME_POS)
         img = frame
         img = img.convert('RGB')
         img.save(path)
