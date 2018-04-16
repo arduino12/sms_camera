@@ -201,7 +201,7 @@ class CameraGsmToUrl(app.App):
         self.camera.preview.alpha = 255
         # crop sides and re-save image
         img = Image.open(path, 'r')
-        l, t, r, b = constants.CAMERA_CROP
+        l, t, r, b = 140, 80, 300, 170 # constants.CAMERA_CROP
         img = img.crop((l, t, img.width - r, img.height - b))
         img.save(path)
         self.add_picture(path)
