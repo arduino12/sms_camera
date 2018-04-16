@@ -76,6 +76,10 @@ class CameraGsmToUrl(app.App):
             self.gsm = self._gsm_reader.connect()[1]
         except:
             self._logger.exception('gsm')
+            self._logger.error('gsm problem: check DC power is stable..\n'
+                'new modules needs to be configure with:\n'
+                'ATE0;+CMGF=1;+CNMI=2,2,0,0,0;+CSCS="UCS2";+CSMP=17,167,0,8;+CSAS;+IPR=115200\n'
+                'AT&W')
             self.gsm = None
         else:
             self.gsm.status_changed = self.gsm_status_changed
@@ -116,8 +120,7 @@ class CameraGsmToUrl(app.App):
                     self.sheets.append_worksheet_table(constants.SHEET_SMS_LOG_NAME, constants.WORKSHEET_SMS_NAME,
                         send_time, normalize_number, text, url)
                 except:
-                    self._logger.exception('self.sheets')
-                    self.sheets = None
+                    self._logger.error('capture_and_share: append_worksheet_table failed')
 
     def capture_and_share(self, number):
         try:
