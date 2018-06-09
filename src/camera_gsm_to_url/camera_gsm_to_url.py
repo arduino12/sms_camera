@@ -265,7 +265,8 @@ class CameraGsmToUrl(app.App):
 
     def send_sms(self, number, text, raise_exception=True):
         try:
-            self.gsm.send_sms(number, text)
+            if number.replace('+', '').isdigit():
+                self.gsm.send_sms(number, text)
         except:
             if raise_exception:
                 raise
